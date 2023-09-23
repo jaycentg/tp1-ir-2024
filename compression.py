@@ -89,8 +89,14 @@ class VBEPostings:
         bytes
             bytearray yang merepresentasikan urutan integer di postings_list
         """
-        # TODO
-        return None
+        gap_based_list = []
+        postings_list_length = len(postings_list)
+        for i in range(postings_list_length):
+            if i == 0:
+                gap_based_list.append(postings_list[0])
+            else:
+                gap_based_list.append(postings_list[i] - postings_list[i-1])
+        return VBEPostings.vb_encode(gap_based_list)
     
     @staticmethod
     def vb_encode(list_of_numbers):
@@ -98,8 +104,11 @@ class VBEPostings:
         Melakukan encoding (tentunya dengan compression) terhadap
         list of numbers, dengan Variable-Byte Encoding
         """
-        # TODO
-        return 0
+        bytestream = []
+        for num in list_of_numbers:
+            encoded = VBEPostings.vb_encode_number(num)
+            bytestream.extend(encoded)
+        return array.array('B', bytestream).tobytes()
 
     @staticmethod
     def vb_encode_number(number):
@@ -107,8 +116,14 @@ class VBEPostings:
         Encodes a number using Variable-Byte Encoding
         Lihat buku teks kita!
         """
-        # TODO
-        return 0
+        bytes_number = []
+        while True:
+            bytes_number.insert(0, number % 128)
+            if number < 128:
+                break
+            number = number // 128
+        bytes_number[-1] += 128
+        return bytes_number
 
     @staticmethod
     def decode(encoded_postings_list):
@@ -128,8 +143,14 @@ class VBEPostings:
         List[int]
             list of docIDs yang merupakan hasil decoding dari encoded_postings_list
         """
-        # TODO
-        return []
+        gap_based_list = VBEPostings.vb_decode(encoded_postings_list)
+        result_list = []
+        for i in range(0, len(gap_based_list)):
+            if i == 0:
+                result_list.append(gap_based_list[i])
+            else:
+                result_list.append(result_list[i-1] + gap_based_list[i])
+        return result_list
 
     @staticmethod
     def vb_decode(encoded_bytestream):

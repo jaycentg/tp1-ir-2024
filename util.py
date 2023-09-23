@@ -25,8 +25,7 @@ class IdMap:
 
     def __len__(self):
         """Mengembalikan banyaknya term (atau dokumen) yang disimpan di IdMap."""
-        # TODO
-        return 0
+        return len(self.str_to_id)
 
     def __get_id(self, s):
         """
@@ -34,13 +33,19 @@ class IdMap:
         Jika s tidak ada pada IdMap, lalu assign sebuah integer id baru dan kembalikan
         integer id baru tersebut.
         """
-        # TODO
-        return 0
+        for (string, id) in self.str_to_id.items():
+            if string == s:
+                return id
+        
+        new_id = self.__len__()
+        self.str_to_id[s] = new_id
+        self.id_to_str.append(s)
+
+        return new_id
     
     def __get_str(self, i):
         """Mengembalikan string yang terasosiasi dengan index i."""
-        # TODO
-        return ""
+        return self.id_to_str[i]
 
     def __getitem__(self, key):
         """
@@ -54,8 +59,17 @@ class IdMap:
         https://stackoverflow.com/questions/43627405/understanding-getitem-method
 
         """
-        # TODO
-        return None
+        if (type(key) == str):
+            if key in self.str_to_id:
+                return self.str_to_id[key]
+            
+            new_id = self.__len__()
+            self.str_to_id[key] = new_id
+            self.id_to_str.append(key)
+
+            return new_id
+        else:
+            return self.id_to_str[key]
 
 def sort_intersect_list(list_A, list_B):
     """
@@ -74,8 +88,22 @@ def sort_intersect_list(list_A, list_B):
     List[Comparable]
         intersection yang sudah terurut
     """
-    # TODO
-    return []
+    pointer_A = 0
+    pointer_B = 0
+    length_A = len(list_A)
+    length_B = len(list_B)
+    answer = []
+
+    while pointer_A < length_A and pointer_B < length_B:
+        if list_A[pointer_A] == list_B[pointer_B]:
+            answer.append(list_A[pointer_A])
+            pointer_A += 1
+            pointer_B += 1
+        elif list_A[pointer_A] < list_B[pointer_B]:
+            pointer_A += 1
+        else:
+            pointer_B += 1
+    return answer
 
 if __name__ == '__main__':
 
