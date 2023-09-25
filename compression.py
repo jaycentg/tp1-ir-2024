@@ -1,4 +1,8 @@
 import array
+import math
+
+from bitarray import bitarray
+
 
 class StandardPostings:
     """ 
@@ -89,15 +93,23 @@ class VBEPostings:
         bytes
             bytearray yang merepresentasikan urutan integer di postings_list
         """
+        # Intialize an empty gap-based list and initial doc_id.
         gap_based_list = []
-        postings_list_length = len(postings_list)
-        for i in range(postings_list_length):
-            if i == 0:
-                gap_based_list.append(postings_list[0])
+        prev_doc_id = 0
+
+        for doc_id in postings_list:
+            if len(gap_based_list) == 0:
+                # Append the first doc_id.
+                gap_based_list.append(doc_id)
             else:
-                gap_based_list.append(postings_list[i] - postings_list[i-1])
+                # Append the gap size of current doc id with the previous one.
+                gap_based_list.append(doc_id - prev_doc_id)
+            # Update previous doc id.
+            prev_doc_id = doc_id
+
+        # Encode gap-based list with VB Encoding.
         return VBEPostings.vb_encode(gap_based_list)
-    
+
     @staticmethod
     def vb_encode(list_of_numbers):
         """ 
@@ -106,8 +118,10 @@ class VBEPostings:
         """
         bytestream = []
         for num in list_of_numbers:
+            # Encode each number using VB and extend it to bytestream list.
             encoded = VBEPostings.vb_encode_number(num)
             bytestream.extend(encoded)
+        # Save as bytes.
         return array.array('B', bytestream).tobytes()
 
     @staticmethod
@@ -149,7 +163,7 @@ class VBEPostings:
             if i == 0:
                 result_list.append(gap_based_list[i])
             else:
-                result_list.append(result_list[i-1] + gap_based_list[i])
+                result_list.append(result_list[i - 1] + gap_based_list[i])
         return result_list
 
     @staticmethod
@@ -161,7 +175,7 @@ class VBEPostings:
         numbers = []
         n = 0
         for byte in encoded_bytestream:
-            if (byte < 128):
+            if byte < 128:
                 n = 128 * n + byte
             else:
                 n = 128 * n + byte - 128
@@ -169,10 +183,74 @@ class VBEPostings:
                 n = 0
         return numbers
 
-    
+
+class EliasGammaPostings:
+    @staticmethod
+    def eg_encode_number(number):
+        """
+        https://stackoverflow.com/questions/16926130/convert-to-binary-and-keep-leading-zeros
+        """
+        if number == 0:
+            return '0'
+
+        N = math.floor(math.log(number, 2))
+        head = '0' * N + '1'
+        tail = format(number - 2 ** N, '#0{}b'.format(N + 2))[2:]
+
+        return bitarray(head + tail)
+
+    @staticmethod
+    def encode(postings_list):
+        """
+        Encode postings_list using Elias Gamma encoding.
+
+        Parameters
+        ----------
+        postings_list: List[int]
+            List of docIDs (postings)
+
+        Returns
+        -------
+        bytes
+            bytearray representing the Elias Gamma encoded sequence of integers
+        """
+        result = bitarray()
+        for num in postings_list:
+            result.extend(EliasGammaPostings.eg_encode_number(num))
+        return result
+
+    @staticmethod
+    def decode(encoded_postings_list):
+        """
+        Decode postings_list from a stream of bytes using Elias Gamma decoding.
+
+        Parameters
+        ----------
+        encoded_postings_list: bytes
+            bytearray representing the Elias Gamma encoded sequence of integers.
+
+        Returns
+        -------
+        List[int]
+            List of docIDs resulting from decoding the encoded_postings_list.
+        """
+        decoded_numbers = []
+        N = 0
+        while len(encoded_postings_list) != 0:
+            if encoded_postings_list[0] == 1:
+                binary_after_one = encoded_postings_list[1:N + 1]
+                K = int(str(binary_after_one.to01()), 2)
+                decoded_numbers.append(2 ** N + K)
+                encoded_postings_list = encoded_postings_list[N + 1:]
+                N = 0
+            else:
+                N += 1
+                encoded_postings_list = encoded_postings_list[1:]
+
+        return decoded_numbers
+
 
 if __name__ == '__main__':
-    
     postings_list = [34, 67, 89, 454, 2345738]
     for Postings in [StandardPostings, VBEPostings]:
         print(Postings.__name__)

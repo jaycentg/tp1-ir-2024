@@ -51,7 +51,7 @@ class InvertedIndex:
         self.metadata_file_path = os.path.join(path, index_name+'.dict')
 
         self.postings_dict = {}
-        self.terms = []         #Untuk keep track urutan term yang dimasukkan ke index
+        self.terms = []         # Untuk keep track urutan term yang dimasukkan ke index
 
     def __enter__(self):
         """
@@ -119,7 +119,7 @@ class InvertedIndexReader(InvertedIndex):
         file index yang besar. Mengapa hanya sebagian kecil? karena agar muat
         diproses di memori. JANGAN MEMUAT SEMUA INDEX DI MEMORI!
         """
-        if self.term_iter == None:
+        if self.term_iter is None:
             raise StopIteration
         
         term_id = next(self.term_iter)
@@ -136,6 +136,9 @@ class InvertedIndexReader(InvertedIndex):
         byte tertentu pada file (index file) dimana postings list dari
         term disimpan.
         """
+        if term not in self.postings_dict:
+            return []
+        
         start, _, length_postings_byte = self.postings_dict[term]
 
         self.index_file.seek(start)
@@ -187,8 +190,8 @@ class InvertedIndexWriter(InvertedIndex):
         postings_encoded = self.encoding_method.encode(postings_list)
         self.terms.append(term)
 
-        current_position = self.index_file.tell()
-        self.postings_dict[term] = (current_position, len(postings_list), len(postings_encoded))
+        current_pointer = self.index_file.tell()
+        self.postings_dict[term] = (current_pointer, len(postings_list), len(postings_encoded))
 
         self.index_file.write(postings_encoded)
 

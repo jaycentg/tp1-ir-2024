@@ -7,12 +7,33 @@ import time
 from index import InvertedIndexReader, InvertedIndexWriter
 from util import IdMap, sort_intersect_list
 from compression import StandardPostings, VBEPostings
+from mpstemmer import MPStemmer
+import re
+import requests
+import string
+
+
+def sort_intersect_conjunctive(lists):
+    # Assume that lists contain lists of list sorted by the length of the list
+    if len(lists) == 1:
+        return lists[0]
+
+    results = lists[0]
+    terms = lists[1:]
+
+    while terms is not None and results is not None:
+        results = sort_intersect_list(results, terms[0])
+        terms = lists[1:] if len(terms) > 1 else None
+
+    return results
+
 
 """ 
 Ingat untuk install tqdm terlebih dahulu
 pip intall tqdm
 """
 from tqdm import tqdm
+
 
 class BSBIIndex:
     """
@@ -27,7 +48,8 @@ class BSBIIndex:
                     VBEPostings, dsb.
     index_name(str): Nama dari file yang berisi inverted index
     """
-    def __init__(self, data_path, output_path, postings_encoding, index_name = "main_index"):
+
+    def __init__(self, data_path, output_path, postings_encoding, index_name="main_index"):
         self.term_id_map = IdMap()
         self.doc_id_map = IdMap()
         self.data_path = data_path
@@ -67,19 +89,27 @@ class BSBIIndex:
         # loop untuk setiap sub-directory di dalam folder collection (setiap block)
         for block_path in tqdm(sorted(next(os.walk(self.data_path))[1])):
             td_pairs = self.parsing_block(block_path)
-            index_id = 'intermediate_index_'+block_path
+            index_id = 'intermediate_index_' + block_path
             self.intermediate_indices.append(index_id)
-            with InvertedIndexWriter(index_id, self.postings_encoding, path = self.output_path) as index:
+            with InvertedIndexWriter(index_id, self.postings_encoding, path=self.output_path) as index:
                 self.write_to_index(td_pairs, index)
                 td_pairs = None
-    
+
         self.save()
 
-        with InvertedIndexWriter(self.index_name, self.postings_encoding, path = self.output_path) as merged_index:
+        with InvertedIndexWriter(self.index_name, self.postings_encoding, path=self.output_path) as merged_index:
             with contextlib.ExitStack() as stack:
-                indices = [stack.enter_context(InvertedIndexReader(index_id, self.postings_encoding, path=self.output_path))
-                               for index_id in self.intermediate_indices]
+                indices = [
+                    stack.enter_context(InvertedIndexReader(index_id, self.postings_encoding, path=self.output_path))
+                    for index_id in self.intermediate_indices]
                 self.merge_index(indices, merged_index)
+
+    def get_stop_words(self):
+        # Using Satya stopwords
+        # Fetch data from GitHub and split data by newline (\n)
+        URL = 'https://raw.githubusercontent.com/datascienceid/stopwords-bahasa-indonesia/master/stopwords_id_satya.txt'
+        r = requests.get(URL)
+        return r.text.split("\n")
 
     def parsing_block(self, block_path):
         """
@@ -119,8 +149,36 @@ class BSBIIndex:
         termIDs dan docIDs. Dua variable ini harus persis untuk semua pemanggilan
         parse_block(...).
         """
-        # TODO
-        return []
+        stemmer = MPStemmer()
+        tokenizer_pattern = r'\w+'
+        satya_stop_words = set(self.get_stop_words())
+        PUNCTUATION = string.punctuation
+
+        td_pairs = []
+
+        for filename in os.listdir(os.path.join(self.data_path, block_path)):
+            document_path = os.path.join(self.data_path, block_path, filename)
+            doc_id = self.doc_id_map[document_path]
+
+            with open(document_path, 'r', encoding='utf-8') as file:
+                content = file.read()
+
+                # Tokenize content
+                tokens_parsed = re.findall(tokenizer_pattern, content)
+
+                # Stem token and convert to lowercase
+                stemmed_tokens = [stemmer.stem(token.lower()) for token in tokens_parsed \
+                                  if token not in PUNCTUATION]
+
+                # Exclude stopwords from list of tokens
+                filtered_tokens = [token for token in stemmed_tokens if token not in satya_stop_words]
+
+                # Append (term_id, doc_id) pair for every filtered token
+                for token in filtered_tokens:
+                    term_id = self.term_id_map[token]
+                    td_pairs.append((term_id, doc_id))
+
+        return td_pairs
 
     def write_to_index(self, td_pairs, index):
         """
@@ -166,7 +224,15 @@ class BSBIIndex:
             Instance InvertedIndexWriter object yang merupakan hasil merging dari
             semua intermediate InvertedIndexWriter objects.
         """
-        # TODO
+        # Loop for every term
+        for i in range(len(self.term_id_map)):
+            list_of_postings_list = []
+            for index in indices:
+                # Find the postings list for every term in every intermediate indices
+                list_of_postings_list.append(index.get_postings_list(i))
+            # Merge using heap and append to merged_index
+            sorted_list = list(heapq.merge(*list_of_postings_list))
+            merged_index.append(i, sorted_list)
 
     def boolean_retrieve(self, query):
         """
@@ -183,7 +249,7 @@ class BSBIIndex:
             contoh: Query "universitas indonesia depok" artinya adalah
                     boolean query "universitas AND indonesia AND depok"
 
-        Result
+        Returns
         ------
         List[str]
             Daftar dokumen terurut yang mengandung sebuah query tokens.
@@ -191,13 +257,46 @@ class BSBIIndex:
 
         JANGAN LEMPAR ERROR/EXCEPTION untuk terms yang TIDAK ADA di collection.
         """
-        # TODO
-        return []
+        # Load metadata
+        self.load()
+
+        stemmer = MPStemmer()
+        satya_stop_words = set(self.get_stop_words())
+        PUNCTUATION = string.punctuation
+        term_postings_list = []
+
+        # Split tokens by whitespace
+        split_tokens = query.split()
+
+        # Stem token and convert to lowercase
+        stemmed_tokens = [stemmer.stem(token.lower()) for token in split_tokens \
+                          if token not in PUNCTUATION]
+
+        # Exclude stopwords from list of tokens
+        filtered_tokens = [token for token in stemmed_tokens if token not in satya_stop_words]
+
+        with InvertedIndexReader(self.index_name, self.postings_encoding, self.output_path) as index:
+            # Get postings list for every term, append to term_postings_list
+            for term in filtered_tokens:
+                term_id = self.term_id_map[term]
+                postings_list = index.get_postings_list(term_id)
+                term_postings_list.append(postings_list)
+
+        # Sort list of lists based on the length of postings_list
+        # Using in-place sorting to reduce space usage
+        term_postings_list.sort(key=len)
+
+        # Find the intersection of several postings lists (sorted)
+        list_of_doc_id = sort_intersect_conjunctive(term_postings_list)
+        result = []
+        for doc_id in list_of_doc_id:
+            # Append directory of document to result
+            result.append(self.doc_id_map[doc_id])
+        return result
 
 
 if __name__ == "__main__":
-
-    BSBI_instance = BSBIIndex(data_path = 'collections', \
-                              postings_encoding = VBEPostings, \
-                              output_path = 'index')
-    BSBI_instance.start_indexing() # memulai indexing!
+    BSBI_instance = BSBIIndex(data_path='collections', \
+                              postings_encoding=VBEPostings, \
+                              output_path='index')
+    BSBI_instance.start_indexing()  # memulai indexing!
