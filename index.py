@@ -122,6 +122,7 @@ class InvertedIndexReader(InvertedIndex):
         if self.term_iter is None:
             raise StopIteration
         
+        # Mengambil term_id selanjutnya, lalu ambil postings_list yang sesuai
         term_id = next(self.term_iter)
         postings_list = self.get_postings_list(term_id)
 
@@ -136,13 +137,16 @@ class InvertedIndexReader(InvertedIndex):
         byte tertentu pada file (index file) dimana postings list dari
         term disimpan.
         """
+        # Return list kosong jika term tidak ada di postings_dict
         if term not in self.postings_dict:
             return []
         
         start, _, length_postings_byte = self.postings_dict[term]
 
+        # Ubah pointer
         self.index_file.seek(start)
 
+        # Baca index lalu decode
         postings_encoded = self.index_file.read(length_postings_byte)
         postings_list = self.encoding_method.decode(postings_encoded)
         
@@ -187,12 +191,15 @@ class InvertedIndexWriter(InvertedIndex):
         postings_list: List[Int]
             List of docIDs dimana term muncul
         """
+        # Encode postings list lalu masukkan term ke properti terms
         postings_encoded = self.encoding_method.encode(postings_list)
         self.terms.append(term)
 
+        # Ambil pointer saat ini lalu simpan sebagai posisi awal postings list di storage
         current_pointer = self.index_file.tell()
         self.postings_dict[term] = (current_pointer, len(postings_list), len(postings_encoded))
 
+        # Tulis ke postings list yang sudah di-encode ke index
         self.index_file.write(postings_encoded)
 
         return []

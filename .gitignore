@@ -1,3 +1,5 @@
 /collections*
-/index
 /tmp
+/ss
+/.idea
+/__pycache__

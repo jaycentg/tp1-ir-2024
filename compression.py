@@ -1,8 +1,4 @@
 import array
-import math
-
-from bitarray import bitarray
-
 
 class StandardPostings:
     """ 
@@ -132,10 +128,13 @@ class VBEPostings:
         """
         bytes_number = []
         while True:
+            # Prepend number % 128
             bytes_number.insert(0, number % 128)
             if number < 128:
                 break
+            # Update number
             number = number // 128
+        # Change the first bit in byte to 1 (add with 128)
         bytes_number[-1] += 128
         return bytes_number
 
@@ -157,12 +156,17 @@ class VBEPostings:
         List[int]
             list of docIDs yang merupakan hasil decoding dari encoded_postings_list
         """
+        # Decode to gap-based list
         gap_based_list = VBEPostings.vb_decode(encoded_postings_list)
         result_list = []
+        # Looping to convert to regular list (non gap-based list)
         for i in range(0, len(gap_based_list)):
             if i == 0:
+                # Immediately append the first element to regular list
                 result_list.append(gap_based_list[i])
             else:
+                # Append the regular list with the content of previous element in regular
+                # list + content of current gap based list
                 result_list.append(result_list[i - 1] + gap_based_list[i])
         return result_list
 
@@ -188,21 +192,27 @@ class EliasGammaPostings:
     @staticmethod
     def eg_encode_number(number):
         """
-        https://stackoverflow.com/questions/16926130/convert-to-binary-and-keep-leading-zeros
+        Encode a number with Elias-Gamma encoding, return encoded string.
         """
         if number == 0:
             return '0'
-
-        N = math.floor(math.log(number, 2))
-        head = '0' * N + '1'
-        tail = format(number - 2 ** N, '#0{}b'.format(N + 2))[2:]
-
-        return bitarray(head + tail)
-
+        
+        # Convert to binary, exclude heading '0b'
+        binary = str(bin(number))[2:]
+        # log_2(binary) = len(binary) - 1 (with no heading 0)
+        N = len(binary) - 1
+        # Unary coding
+        head = '0'*N + '1'
+        # Ref: https://stackoverflow.com/questions/16926130/convert-to-binary-and-keep-leading-zeros
+        tail = format(number - 2**N, '#0{}b'.format(N + 2))[2:]
+        
+        return head + tail
+    
     @staticmethod
     def encode(postings_list):
         """
-        Encode postings_list using Elias Gamma encoding.
+        Encode postings_list menggunakan Elias-Gamma encoding tanpa menggunakan
+        gap-based list.
 
         Parameters
         ----------
@@ -212,47 +222,73 @@ class EliasGammaPostings:
         Returns
         -------
         bytes
-            bytearray representing the Elias Gamma encoded sequence of integers
+            bytearray merepresentasikan hasil encoding Elias-Gamma
         """
-        result = bitarray()
+        # Menambahkan result dengan 1 di awal supaya menjadi flag
+        # Jika tidak, jumlah leading zeros di depan yang seharusnya penting akan
+        # terhapus saat melakukan decoding
+        result = '1'
         for num in postings_list:
-            result.extend(EliasGammaPostings.eg_encode_number(num))
-        return result
+            result += EliasGammaPostings.eg_encode_number(num)
+        # Pendekatan yang saya gunakan untuk ini adalah dengan menyimpan representasi
+        # desimal result dalam bentuk bytes.
+        # Sebelumnya, saya menggunakan bitarray, tapi space yang digunakan untuk menyimpan
+        # encoding (dalam bytes) tidak efisien (sekitar 97-100 bytes untuk list pada bagian test). 
+        # Dengan menggunakan pendekatan ini, space yang digunakan menjadi lebih sedikit 
+        # (sekitar 13 bytes) dibanding menggunakan bitarray.
+        result_int = int(result, 2)
+        # Ref: https://blog.gitnux.com/code/python-bytes/
+        result_bytes = result_int.to_bytes((result_int.bit_length() + 7) // 8, "big")
+        return result_bytes
 
     @staticmethod
     def decode(encoded_postings_list):
         """
-        Decode postings_list from a stream of bytes using Elias Gamma decoding.
+        Decode encoded_postings_list menggunakan Elias-Gamma decoding.
 
         Parameters
         ----------
         encoded_postings_list: bytes
-            bytearray representing the Elias Gamma encoded sequence of integers.
+            bytearray merepresentasikan hasil encoding Elias-Gamma.
 
         Returns
         -------
         List[int]
-            List of docIDs resulting from decoding the encoded_postings_list.
+            List of docIDs yang merupakan hasil decoding encoded_postings_list.
         """
+        # Ref: https://blog.gitnux.com/code/python-bytes-to-int/
+        bytes_int = int.from_bytes(encoded_postings_list, "big")
+        # Potong '0b1' di awal representasi binary
+        encoded_postings = bin(bytes_int)[3:]
         decoded_numbers = []
         N = 0
-        while len(encoded_postings_list) != 0:
-            if encoded_postings_list[0] == 1:
-                binary_after_one = encoded_postings_list[1:N + 1]
-                K = int(str(binary_after_one.to01()), 2)
+        while len(encoded_postings) != 0:
+            if encoded_postings[0] == '1':
+                # Ambil binary string setelah 1 sebanyak jumlah 0
+                binary_after_one = encoded_postings[1:N+1]
+                # Memastikan binary_after_one bukan string kosong
+                if not binary_after_one:
+                    break
+                # Konversi ke integer
+                K = int(str(binary_after_one), 2)
+                # Hitung menggunakan X = 2^N + K
                 decoded_numbers.append(2 ** N + K)
-                encoded_postings_list = encoded_postings_list[N + 1:]
+                # Memotong bit string hingga dimulai dari elemen ke-N+1
+                encoded_postings = encoded_postings[N+1:]
+                # Reset counter 0
                 N = 0
             else:
+                # Hitung jumlah 0 sambil menghilangkan angka 0 tersebut 
                 N += 1
-                encoded_postings_list = encoded_postings_list[1:]
-
+                encoded_postings = encoded_postings[1:]
+                
+        
         return decoded_numbers
 
 
 if __name__ == '__main__':
     postings_list = [34, 67, 89, 454, 2345738]
-    for Postings in [StandardPostings, VBEPostings]:
+    for Postings in [StandardPostings, VBEPostings, EliasGammaPostings]:
         print(Postings.__name__)
         encoded_postings_list = Postings.encode(postings_list)
         print("byte hasil encode: ", encoded_postings_list)

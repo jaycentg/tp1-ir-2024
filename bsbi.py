@@ -6,7 +6,7 @@ import time
 
 from index import InvertedIndexReader, InvertedIndexWriter
 from util import IdMap, sort_intersect_list
-from compression import StandardPostings, VBEPostings
+from compression import EliasGammaPostings, StandardPostings, VBEPostings
 from mpstemmer import MPStemmer
 import re
 import requests
@@ -14,15 +14,35 @@ import string
 
 
 def sort_intersect_conjunctive(lists):
-    # Assume that lists contain lists of list sorted by the length of the list
+    """ 
+    Function to find intersection of several lists.
+    Reference: Slide kuliah inverted_index.pdf page 32.
+    
+    Parameters
+    ----------
+    query: lists
+        List of lists contains iterable elements, sorted by the length of the
+        nested lists. Each nested list is already sorted.
+
+    Returns
+    ------
+    List[Iterable]
+        List contains the intersection of lists given in the parameter (sorted).
+
+
+    """
     if len(lists) == 1:
+        # If 'lists' only contains one list, simply just return that list.
         return lists[0]
 
+    # Inital results and terms
     results = lists[0]
     terms = lists[1:]
 
     while terms is not None and results is not None:
+        # Update results with the intersection between two currently compared lists
         results = sort_intersect_list(results, terms[0])
+        # Update terms
         terms = lists[1:] if len(terms) > 1 else None
 
     return results
@@ -149,6 +169,7 @@ class BSBIIndex:
         termIDs dan docIDs. Dua variable ini harus persis untuk semua pemanggilan
         parse_block(...).
         """
+        # Prerequisite resources
         stemmer = MPStemmer()
         tokenizer_pattern = r'\w+'
         satya_stop_words = set(self.get_stop_words())
@@ -156,17 +177,20 @@ class BSBIIndex:
 
         td_pairs = []
 
+        # Loop for every file in every block
         for filename in os.listdir(os.path.join(self.data_path, block_path)):
+            # Get document path and save it to doc_id_map
             document_path = os.path.join(self.data_path, block_path, filename)
             doc_id = self.doc_id_map[document_path]
 
+            # Open document by document path
             with open(document_path, 'r', encoding='utf-8') as file:
                 content = file.read()
 
                 # Tokenize content
                 tokens_parsed = re.findall(tokenizer_pattern, content)
 
-                # Stem token and convert to lowercase
+                # Convert to lowercase and stem token
                 stemmed_tokens = [stemmer.stem(token.lower()) for token in tokens_parsed \
                                   if token not in PUNCTUATION]
 
@@ -228,7 +252,7 @@ class BSBIIndex:
         for i in range(len(self.term_id_map)):
             list_of_postings_list = []
             for index in indices:
-                # Find the postings list for every term in every intermediate indices
+                # Find the postings list for every term in every intermediate index
                 list_of_postings_list.append(index.get_postings_list(i))
             # Merge using heap and append to merged_index
             sorted_list = list(heapq.merge(*list_of_postings_list))
@@ -260,6 +284,7 @@ class BSBIIndex:
         # Load metadata
         self.load()
 
+        # Prerequisite resources
         stemmer = MPStemmer()
         satya_stop_words = set(self.get_stop_words())
         PUNCTUATION = string.punctuation
@@ -268,7 +293,7 @@ class BSBIIndex:
         # Split tokens by whitespace
         split_tokens = query.split()
 
-        # Stem token and convert to lowercase
+        # Convert to lowercase and stem token 
         stemmed_tokens = [stemmer.stem(token.lower()) for token in split_tokens \
                           if token not in PUNCTUATION]
 
@@ -296,7 +321,20 @@ class BSBIIndex:
 
 
 if __name__ == "__main__":
+    
     BSBI_instance = BSBIIndex(data_path='collections', \
                               postings_encoding=VBEPostings, \
                               output_path='index')
+    start = time.time()
     BSBI_instance.start_indexing()  # memulai indexing!
+    end = time.time()
+    print(f"Elapsed indexing time (BSBI): {end - start}")
+    
+
+    BSBI_instance_EG = BSBIIndex(data_path='collections', \
+                              postings_encoding=EliasGammaPostings, \
+                              output_path='index_eg')
+    start = time.time()
+    BSBI_instance_EG.start_indexing()  # memulai indexing!
+    end = time.time()
+    print(f"Elapsed indexing time (Elias-Gamma): {end - start}")
