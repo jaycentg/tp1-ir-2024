@@ -281,8 +281,7 @@ class EliasGammaPostings:
                 # Hitung jumlah 0 sambil menghilangkan angka 0 tersebut 
                 N += 1
                 encoded_postings = encoded_postings[1:]
-                
-        
+              
         return decoded_numbers
 
 

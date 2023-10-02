@@ -185,7 +185,7 @@ class BSBIIndex:
 
             # Open document by document path
             with open(document_path, 'r', encoding='utf-8') as file:
-                content = file.read()
+                content = file.read() 
 
                 # Tokenize content
                 tokens_parsed = re.findall(tokenizer_pattern, content)

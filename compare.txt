@@ -3,10 +3,10 @@ Berdasarkan perbandingan, hasil yang saya dapatkan adalah sebagai berikut:
 - Elias-Gamma Encoding  : ~2.5 jam
 
 Dapat dilihat bahwa Elias-Gamma encoding memakan lebih banyak waktu dibandingkan
-VB Encoding. Hal ini kemungkinan disebabkan oleh index yang dihasilkan yang berukuran besar,
-sehingga lebih membutuhkan waktu untuk menulis atau membaca dari index. Selain itu, banyak
-dilakukan konversi binary ke int dan sebaliknya, operasi string, dan branching, sehingga 
-memakan lebih banyak waktu.
+VB Encoding. Hal ini kemungkinan disebabkan oleh banyaknya dilakukan konversi binary ke 
+int dan sebaliknya, operasi string, dan branching, sehingga memakan lebih banyak waktu.
+Untuk mempercepat algoritma, dapat menggunakan bitwise operation untuk memanipulasi binary
+representation dan meminimalkan konversi tipe data.
 
 Begitu juga untuk ukuran index yang dihasilkan. Pada VB Encoding, ukuran tiap intermediate
 index yang dihasilkan sekitar 360 KB, dengan main index sebesar sekitar 6 MB. Sedangkan,
