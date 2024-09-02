@@ -68,6 +68,105 @@ class IdMap:
             # Return string if the provided key is an integer (id).
             return self.__get_str(key)
 
+class QueryParser:
+    """
+    Class untuk melakukan parsing query untuk boolean search
+    
+    Parameters
+    ----------
+    query: str
+        Query string yang akan di-parse. Input dijamin valid, tidak ada imbalanced parentheses.
+        Tanda kurung buka dijamin "menempel" di awal kata yang mengikuti (atau tanda kurung buka lainnya) dan
+        tanda kurung tutup dijamin "menempel" di akhir kata yang diikuti (atau tanda kurung tutup lainnya).
+        Sebagai contoh, bisa lihat pada contoh method query_string_to_list() atau pada test case.
+    stemmer
+        Objek stemmer untuk stemming token
+    stopwords: set
+        Set yang berisi stopwords
+    """
+    def __init__(self, query: str, stemmer, stopwords: set):
+        self.query = query
+        self.stemmer = stemmer
+        self.stopwords = stopwords
+        self.query_list = self.query_string_to_list()
+        self.query_preprocessed = self.preprocess_tokens()
+    
+    def is_valid(self):
+        for token in self.query_list:
+            if token in self.stopwords:
+                return False
+        return True
+
+    def query_string_to_list(self):
+        """
+        Melakukan parsing query dari yang berbentuk string menjadi list of tokens.
+        Contoh: "term1 AND term2 OR (term3 DIFF term4)" --> ["term1", "AND", "term2", "OR", "(",
+                                                             "term3", "DIFF", "term4", ")"]
+
+        Returns
+        -------
+        List[str]
+            query yang sudah di-parse
+        """        
+        result = []
+        for token in self.query_list:
+            while token[0] == "(":
+                result.append(token[0])
+                token = token[1:]
+            suffix_parentheses = []
+            while token[-1] == ")":
+                suffix_parentheses.append(token[-1])
+                token = token[:-1]
+            result.append(token)
+            result.extend(suffix_parentheses)
+        return result
+
+    def preprocess_tokens(self):
+        result = []
+        for token in self.query_list:
+            if token in ('AND', 'OR', 'DIFF', '(', ')'):
+                result.append(token)
+            else:
+                stemmed = self.stemmer.stem(token.lower())
+                # if stemmed in self.stopwords:
+                #     stemmed = ""
+                result.append(stemmed)
+        return result
+
+    def infix_to_postfix(self):
+        """
+        Fungsi ini mengubah ekspresi infix menjadi postfix. Evaluasi akan dilakukan secara postfix juga.
+        Contoh: A AND B (infix) --> A B AND (postfix)
+        Untuk selengkapnya, silakan lihat algoritma berikut: 
+        https://www.geeksforgeeks.org/convert-infix-expression-to-postfix-expression/
+
+        Returns
+        -------
+        list[str]
+            list yang berisi token dalam ekspresi postfix
+        """
+        precedence = {'NOT': 1, 'AND': 1, 'OR': 1}
+        output_queue = []
+        operator_stack = []
+        
+        for token in self.query_preprocessed:
+            if token in precedence:
+                while (operator_stack and operator_stack[-1] != '(' and
+                       precedence[operator_stack[-1]] >= precedence[token]):
+                    output_queue.append(operator_stack.pop())
+                operator_stack.append(token)
+            elif token == '(':
+                operator_stack.append(token)
+            elif token == ')':
+                while operator_stack and operator_stack[-1] != '(':
+                    output_queue.append(operator_stack.pop())
+                if operator_stack and operator_stack[-1] == '(':
+                    operator_stack.pop()
+            else:
+                output_queue.append(token)
+        
+        while operator_stack:
+            output_queue.append(operator_stack.pop())
 
 def sort_intersect_list(list_A, list_B):
     """
@@ -86,11 +185,9 @@ def sort_intersect_list(list_A, list_B):
     List[Comparable]
         intersection yang sudah terurut
     """
-    # Pointers to keep track the elements compared from both lists.
     pointer_A = 0
     pointer_B = 0
 
-    # Length of both lists.
     length_A = len(list_A)
     length_B = len(list_B)
 
@@ -114,6 +211,97 @@ def sort_intersect_list(list_A, list_B):
             pointer_B += 1
     return answer
 
+def sort_union_list(list_A, list_B):
+    """
+    Melakukan union dua (ascending) sorted lists dan mengembalikan hasilnya
+    yang juga terurut.
+
+    Parameters
+    ----------
+    list_A: List[Comparable]
+    list_B: List[Comparable]
+        Dua buah sorted list yang akan di-union.
+
+    Returns
+    -------
+    List[Comparable]
+        union yang sudah terurut
+    """
+    pointer_A = 0
+    pointer_B = 0
+
+    length_A = len(list_A)
+    length_B = len(list_B)
+
+    # Initialize an empty list to store result.
+    answer = []
+
+    # Loop until one list has been fully compared to another.
+    while pointer_A < length_A and pointer_B < length_B:
+        if list_A[pointer_A] == list_B[pointer_B]:
+            answer.append(list_A[pointer_A])
+            pointer_A += 1
+            pointer_B += 1
+        elif list_A[pointer_A] < list_B[pointer_B]:
+            answer.append(list_A[pointer_A])
+            pointer_A += 1
+        else:
+            answer.append(list_B[pointer_B])
+            pointer_B += 1
+    
+    # append sisanya
+    while pointer_A < length_A:
+        answer.append(list_A[pointer_A])
+        pointer_A += 1
+
+    while pointer_B < length_B:
+        answer.append(list_B[pointer_B])
+        pointer_B += 1
+
+    return answer
+
+def sort_diff_list(list_A, list_B):
+    """
+    Melakukan difference dua (ascending) sorted lists dan mengembalikan hasilnya
+    yang juga terurut.
+
+    Parameters
+    ----------
+    list_A: List[Comparable]
+    list_B: List[Comparable]
+        Dua buah sorted list yang akan di-difference.
+
+    Returns
+    -------
+    List[Comparable]
+        difference yang sudah terurut
+    """
+    pointer_A = 0
+    pointer_B = 0
+
+    length_A = len(list_A)
+    length_B = len(list_B)
+
+    # Initialize an empty list to store result.
+    answer = []
+
+    # Loop until one list has been fully compared to another.
+    while pointer_A < length_A and pointer_B < length_B:
+        if list_A[pointer_A] == list_B[pointer_B]:
+            pointer_A += 1
+            pointer_B += 1
+        elif list_A[pointer_A] < list_B[pointer_B]:
+            answer.append(list_A[pointer_A])
+            pointer_A += 1
+        else:
+            pointer_B += 1
+    
+    # append sisanya di list A
+    while pointer_A < length_A:
+        answer.append(list_A[pointer_A])
+        pointer_A += 1
+
+    return answer    
 
 if __name__ == '__main__':
     doc = ["halo", "semua", "selamat", "pagi", "semua"]
@@ -133,3 +321,18 @@ if __name__ == '__main__':
     assert sort_intersect_list([1, 2, 3], [2, 3]) == [2, 3], "sorted_intersect salah"
     assert sort_intersect_list([4, 5], [1, 4, 7]) == [4], "sorted_intersect salah"
     assert sort_intersect_list([], []) == [], "sorted_intersect salah"
+
+    assert sort_union_list([1, 2, 3], [2, 3]) == [1, 2, 3], "sorted_union salah"
+    assert sort_union_list([4, 5], [1, 4, 7]) == [1, 4, 5, 7], "sorted_union salah"
+    assert sort_union_list([], []) == [], "sorted_union salah"
+
+    assert sort_diff_list([1, 2, 3], [2, 3]) == [1], "sorted_diff salah"
+    assert sort_diff_list([4, 5], [1, 4, 7]) == [5], "sorted_diff salah"
+    assert sort_diff_list([], []) == [], "sorted_diff salah"
+
+    from mpstemmer import MPStemmer
+    qp = QueryParser("((term1 AND term2) OR term3) DIFF (term6 AND (term4 OR term5) DIFF (term7 OR term8))", MPStemmer(), set(["term1"]))
+    assert qp.query_string_to_list() == ['(', '(', 'term1', 'AND', 'term2', ')', 'OR', 'term3', ')', 
+                                     'DIFF', '(', 'term6', 'AND', '(', 'term4', 'OR', 'term5', 
+                                     ')', 'DIFF', '(', 'term7', 'OR', 'term8', ')', ')'], "parsing to list salah"
+    print(qp.preprocess_tokens())

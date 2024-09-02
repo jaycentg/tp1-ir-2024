@@ -5,52 +5,16 @@ import heapq
 import time
 
 from index import InvertedIndexReader, InvertedIndexWriter
-from util import IdMap, sort_intersect_list
+from util import IdMap, QueryParser, sort_diff_list, sort_intersect_list, sort_union_list
 from compression import EliasGammaPostings, StandardPostings, VBEPostings
 from mpstemmer import MPStemmer
 import re
 import requests
 import string
 
-
-def sort_intersect_conjunctive(lists):
-    """ 
-    Function to find intersection of several lists.
-    Reference: Slide kuliah inverted_index.pdf page 32.
-    
-    Parameters
-    ----------
-    query: lists
-        List of lists contains iterable elements, sorted by the length of the
-        nested lists. Each nested list is already sorted.
-
-    Returns
-    ------
-    List[Iterable]
-        List contains the intersection of lists given in the parameter (sorted).
-
-
-    """
-    if len(lists) == 1:
-        # If 'lists' only contains one list, simply just return that list.
-        return lists[0]
-
-    # Inital results and terms
-    results = lists[0]
-    terms = lists[1:]
-
-    while terms is not None and results is not None:
-        # Update results with the intersection between two currently compared lists
-        results = sort_intersect_list(results, terms[0])
-        # Update terms
-        terms = lists[1:] if len(terms) > 1 else None
-
-    return results
-
-
 """ 
 Ingat untuk install tqdm terlebih dahulu
-pip intall tqdm
+pip install tqdm
 """
 from tqdm import tqdm
 
@@ -261,17 +225,24 @@ class BSBIIndex:
     def boolean_retrieve(self, query):
         """
         Melakukan boolean retrieval untuk mengambil semua dokumen yang
-        mengandung semua kata pada query. Jangan lupa lakukan pre-processing
-        yang sama dengan yang dilakukan pada proses indexing!
-        (Stemming dan Stopwords Removal)
+        mengandung semua kata pada query. Lakukan pre-processing seperti
+        yang telah dilakukan pada tahap indexing, kecuali penghapusan stopwords.
+        Jika terdapat stopwords dalam query, return list kosong dan berikan pesan bahwa
+        terdapat stopwords di dalam query.
+
+        Parse query dengan class QueryParser. Ambil representasi postfix dari ekspresi
+        untuk kemudian dievaluasi. Silakan baca pada URL di bawah untuk lebih lanjut.
+        https://www.geeksforgeeks.org/evaluation-of-postfix-expression/
+
+        Anda tidak wajib mengimplementasikan conjunctive queries optimization.
 
         Parameters
         ----------
         query: str
-            Query tokens yang dipisahkan oleh spasi
+            Query tokens yang dipisahkan oleh spasi. Ini dapat mengandung operator
+            himpunan AND, NOT, dan DIFF, serta tanda kurung untuk presedensi. 
 
-            contoh: Query "universitas indonesia depok" artinya adalah
-                    boolean query "universitas AND indonesia AND depok"
+            contoh: (universitas AND indonesia OR depok) DIFF ilmu AND komputer
 
         Returns
         ------
@@ -284,39 +255,41 @@ class BSBIIndex:
         # Load metadata
         self.load()
 
-        # Prerequisite resources
         stemmer = MPStemmer()
         satya_stop_words = set(self.get_stop_words())
-        PUNCTUATION = string.punctuation
-        term_postings_list = []
 
-        # Split tokens by whitespace
-        split_tokens = query.split()
-
-        # Convert to lowercase and stem token 
-        stemmed_tokens = [stemmer.stem(token.lower()) for token in split_tokens \
-                          if token not in PUNCTUATION]
-
-        # Exclude stopwords from list of tokens
-        filtered_tokens = [token for token in stemmed_tokens if token not in satya_stop_words]
+        qp = QueryParser(query, stemmer, satya_stop_words)
+        if not qp.is_valid():
+            print("Query tidak valid karena mengandung stopwords.")
+            return []
+        
+        # evaluasi postfix expression
+        tokens = qp.infix_to_postfix()
+        operand_stack = []
 
         with InvertedIndexReader(self.index_name, self.postings_encoding, self.output_path) as index:
-            # Get postings list for every term, append to term_postings_list
-            for term in filtered_tokens:
-                term_id = self.term_id_map[term]
-                postings_list = index.get_postings_list(term_id)
-                term_postings_list.append(postings_list)
+            for token in tokens:
+                if token in ('AND', 'DIFF', 'OR'):
+                    right = operand_stack.pop()
+                    left = operand_stack.pop()
+                    if token == 'AND':
+                        result = sort_intersect_list(left, right)
+                    elif token == 'DIFF':
+                        result = sort_diff_list(left, right)
+                    else:
+                        result = sort_union_list(left, right)
+                    operand_stack.append(result)
+                else:
+                    term_id = self.term_id_map[token]
+                    postings_list = index.get_postings_list(term_id)
+                    operand_stack.append(postings_list)
 
-        # Sort list of lists based on the length of postings_list
-        # Using in-place sorting to reduce space usage
-        term_postings_list.sort(key=len)
+        docs = operand_stack[0] if operand_stack else []
 
-        # Find the intersection of several postings lists (sorted)
-        list_of_doc_id = sort_intersect_conjunctive(term_postings_list)
         result = []
-        for doc_id in list_of_doc_id:
-            # Append directory of document to result
+        for doc_id in docs:
             result.append(self.doc_id_map[doc_id])
+
         return result
 
 
@@ -331,10 +304,10 @@ if __name__ == "__main__":
     print(f"Elapsed indexing time (BSBI): {end - start}")
     
 
-    BSBI_instance_EG = BSBIIndex(data_path='collections', \
-                              postings_encoding=EliasGammaPostings, \
-                              output_path='index_eg')
-    start = time.time()
-    BSBI_instance_EG.start_indexing()  # memulai indexing!
-    end = time.time()
-    print(f"Elapsed indexing time (Elias-Gamma): {end - start}")
+    # BSBI_instance_EG = BSBIIndex(data_path='collections', \
+    #                           postings_encoding=EliasGammaPostings, \
+    #                           output_path='index_eg')
+    # start = time.time()
+    # BSBI_instance_EG.start_indexing()  # memulai indexing!
+    # end = time.time()
+    # print(f"Elapsed indexing time (Elias-Gamma): {end - start}")
